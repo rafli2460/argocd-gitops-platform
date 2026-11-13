@@ -1,0 +1,19 @@
+# App-of-apps: the only Application applied by hand. It syncs everything in apps/.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/rafli2460/devops-portfolio.git
+    targetRevision: main
+    path: gitops-platform/apps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
