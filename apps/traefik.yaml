@@ -14,6 +14,13 @@ spec:
         service:
           spec:
             type: NodePort
+        # NodePort has no LB address to copy; publish a fixed one so ArgoCD marks Ingresses Healthy
+        providers:
+          kubernetesIngress:
+            publishedService:
+              enabled: false
+            ingressEndpoint:
+              hostname: localhost
         ports:
           web:
             nodePort: 30080
