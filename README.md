@@ -30,6 +30,8 @@ kind, kubectl (1.21+ for built-in kustomize), Docker (or a working Podman setup 
 
 Tear down: `make down`.
 
+Day-to-day operation, upgrades and troubleshooting: [docs/operations.md](docs/operations.md).
+
 ## Design notes
 
 - kind has no LoadBalancer, so host ports 8080/8443 map to Traefik NodePorts 30080/30443.
