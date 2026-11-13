@@ -6,9 +6,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/rafli2460/devops-portfolio.git
+    repoURL: https://github.com/rafli2460/argocd-gitops-platform.git
     targetRevision: main
-    path: gitops-platform/manifests/demo-app
+    path: manifests/demo-app
   destination:
     server: https://kubernetes.default.svc
     namespace: demo

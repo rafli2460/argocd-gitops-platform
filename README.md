@@ -21,8 +21,7 @@ kind, kubectl (1.21+ for built-in kustomize), Docker (or a working Podman setup 
 
 ## Run
 
-1. Replace `CHANGE_ME` with your GitHub user in two files:
-   `bootstrap/root-app.yaml` and `apps/demo-app.yaml` (`grep -rn CHANGE_ME .`).
+1. Forking? Point `repoURL` in `bootstrap/root-app.yaml` and `apps/demo-app.yaml` at your fork.
 2. Push the repo to GitHub (public, or add repo credentials to ArgoCD).
 3. `make up`
 4. Open http://demo.localtest.me:8080

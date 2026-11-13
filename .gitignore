@@ -1,0 +1,5 @@
+.env
+*.kubeconfig
+*.pem
+*.key
+.DS_Store
