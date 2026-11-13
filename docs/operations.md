@@ -16,10 +16,11 @@ sequenceDiagram
   You->>Make: make up
   Make->>Kind: create 1 control-plane + 2 workers
   Make->>Kind: kubectl apply -k bootstrap/argocd
+  Make->>Kind: create Secret monitoring/grafana-admin
   Make->>Argo: apply bootstrap/root-app.yaml
   loop every ~3 min
     Argo->>GH: read apps/
-    Argo->>Kind: create/patch traefik, metrics-server, demo-app
+    Argo->>Kind: create/patch traefik, metrics-server, demo-app, monitoring
   end
 ```
 
@@ -27,8 +28,10 @@ sequenceDiagram
    8080/8443 map to node ports 30080/30443.
 2. `make argocd` installs ArgoCD with Kustomize from the pinned upstream `install.yaml`
    (`bootstrap/argocd/`). This is the only part **not** managed by Git sync.
-3. `make root` applies the `root` Application by hand. It watches `apps/`.
-4. ArgoCD creates one child Application per file in `apps/` (app-of-apps), and each child
+3. `make grafana-secret` creates the Grafana admin login with a random password. It lives
+   only in the cluster because the repo is public. Rerunning it keeps the existing password.
+4. `make root` applies the `root` Application by hand. It watches `apps/`.
+5. ArgoCD creates one child Application per file in `apps/` (app-of-apps), and each child
    deploys its own chart or manifests.
 
 The request path for the demo:
@@ -53,8 +56,9 @@ The request path for the demo:
 | Destroy everything | `make down` |
 | App status | `kubectl --context kind-gitops-portfolio -n argocd get applications` |
 | Test the demo | `curl -sI http://demo.localtest.me:8080` (expect `HTTP/1.1 200 OK`) |
-| Admin password | `make password` |
+| ArgoCD admin password | `make password` |
 | ArgoCD UI | see below |
+| Grafana | http://grafana.localtest.me:8080, user `admin`, password from `make grafana-password` |
 
 ArgoCD UI (keep the terminal open while you use it):
 
@@ -64,8 +68,38 @@ kubectl --context kind-gitops-portfolio -n argocd port-forward svc/argocd-server
 
 Open http://localhost:8081, user `admin`, password from `make password`.
 
-Healthy state: all four apps (`root`, `traefik`, `metrics-server`, `demo-app`) show
-`Synced` and `Healthy`.
+Healthy state: all five apps (`root`, `traefik`, `metrics-server`, `demo-app`,
+`monitoring`) show `Synced` and `Healthy`.
+
+### Monitoring
+
+`apps/monitoring.yaml` deploys kube-prometheus-stack: Prometheus, Grafana,
+kube-state-metrics and node-exporter, plus the stock dashboards. Useful dashboards
+(Grafana, Dashboards, folder **General**):
+
+| Dashboard | Answers |
+|---|---|
+| Kubernetes / Compute Resources / Cluster | CPU and memory per namespace |
+| Kubernetes / Compute Resources / Namespace (Pods) | Which pod uses what; pick `demo` to watch the HPA scale |
+| Node Exporter / Nodes | CPU, memory, disk and network per kind node |
+| Kubernetes / Persistent Volumes, Networking | Storage and traffic |
+
+Prometheus UI, for raw queries:
+
+```fish
+kubectl --context kind-gitops-portfolio -n monitoring port-forward svc/monitoring-kube-prometheus-prometheus 9090:9090
+```
+
+Open http://localhost:9090, then Status, Target health. Every target should be `UP`.
+
+Reset the Grafana password: delete the Secret, recreate it, then restart Grafana.
+Grafana keeps no state on disk, so its dashboards come back from the chart.
+
+```fish
+kubectl --context kind-gitops-portfolio -n monitoring delete secret grafana-admin
+make grafana-secret
+kubectl --context kind-gitops-portfolio -n monitoring rollout restart deploy/monitoring-grafana
+```
 
 ## 4. Changing things (the GitOps way)
 
@@ -130,6 +164,7 @@ For plain YAML, copy `apps/demo-app.yaml`, point `path:` at a new folder under
 | ArgoCD | tag in `bootstrap/argocd/kustomization.yaml` | edit, commit, then `make argocd` |
 | Traefik | `targetRevision` in `apps/traefik.yaml` | edit, check values (below), push |
 | metrics-server | `targetRevision` in `apps/metrics-server.yaml` | edit, check values, push |
+| kube-prometheus-stack | `targetRevision` in `apps/monitoring.yaml` | edit, check values, push; read the chart's upgrade notes, major versions often change CRDs |
 | podinfo | image tag in `manifests/demo-app/deployment.yaml` | edit, push |
 
 Charts change their values schema between major versions (Traefik 42 moved
@@ -161,6 +196,10 @@ kubectl --context kind-gitops-portfolio -n argocd get application <name> \
 | `demo-app` stuck `Progressing`, traffic works | Ingress has no address in `status.loadBalancer` | Already handled by `ingressEndpoint.hostname` in `apps/traefik.yaml`; if it returns, check Traefik logs |
 | `404 page not found` from Traefik | Host header does not match | Use `demo.localtest.me`, not `localhost` or a typo |
 | HPA shows `cpu: <unknown>` | metrics-server not ready | Wait a minute; check the `metrics-server` app |
+| Grafana pod `CreateContainerConfigError` | Secret `grafana-admin` missing (cluster built without `make up`) | `make grafana-secret` |
+| Grafana login rejected | Password changed after Grafana first started | Reset steps in section 3, Monitoring |
+| `monitoring` sync fails with `metadata.annotations: Too long` | CRDs applied client-side | Keep `ServerSideApply=true` in `apps/monitoring.yaml` |
+| Prometheus target `DOWN` | Component not reachable from pods | Check Status, Target health in Prometheus; kind control-plane components are disabled on purpose |
 | `make cluster` fails, port already allocated | Something else uses 8080/8443 | `ss -ltnp \| grep -E ':8080\|:8443'`, stop it |
 | Cluster dead after reboot | kind node containers did not restart | `docker ps -a \| grep gitops-portfolio`; if stopped, `make down && make up` |
 
@@ -178,7 +217,10 @@ logs show sync and health problems.
 ## 7. Limits (local lab only)
 
 - metrics-server runs with `--kubelet-insecure-tls`.
-- No TLS on the demo, no auth beyond the ArgoCD admin user, repo must be public.
+- No TLS on the demo or Grafana, repo must be public.
+- kind binds host ports 8080/8443 on all interfaces, so the demo and Grafana login page
+  are reachable from your Wi-Fi network. Grafana is protected only by its random password.
+- Monitoring has no Alertmanager and keeps 2 days of metrics; Prometheus is capped at 1 GiB.
 - ArgoCD does not manage itself; its upgrades go through `make argocd`.
 - Memory: the three kind nodes use about 2.2 GiB together (measured with `docker stats`).
   On a 15 GiB laptop, `make down` when not in use.

@@ -1,0 +1,68 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    targetRevision: 93.2.2
+    helm:
+      valuesObject:
+        # local lab: dashboards only, no alert routing
+        alertmanager:
+          enabled: false
+        grafana:
+          # created by `make grafana-secret`; a chart-generated password would change on every ArgoCD render
+          admin:
+            existingSecret: grafana-admin
+          defaultDashboardsTimezone: browser
+          # helm test Pod; ArgoCD would deploy it as a normal resource
+          testFramework:
+            enabled: false
+          ingress:
+            enabled: true
+            ingressClassName: traefik
+            hosts:
+              - grafana.localtest.me
+        # kind binds these control-plane components to 127.0.0.1, so Prometheus cannot scrape them
+        kubeEtcd:
+          enabled: false
+        kubeControllerManager:
+          enabled: false
+        kubeScheduler:
+          enabled: false
+        kubeProxy:
+          enabled: false
+        # webhook certs are patched in by a hook Job, which ArgoCD self-heal fights; not needed for a lab
+        prometheusOperator:
+          admissionWebhooks:
+            enabled: false
+          tls:
+            enabled: false
+        prometheus:
+          prometheusSpec:
+            retention: 2d
+            resources:
+              requests:
+                cpu: 100m
+                memory: 512Mi
+              limits:
+                memory: 1Gi
+        # kind nodes are containers; the default rootfs mount fails with "not a shared or slave mount"
+        prometheus-node-exporter:
+          hostRootFsMount:
+            enabled: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      # the chart's CRDs exceed the 256 KiB last-applied annotation limit
+      - ServerSideApply=true

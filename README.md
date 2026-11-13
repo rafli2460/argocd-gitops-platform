@@ -12,7 +12,9 @@ flowchart LR
   Apps --> Traefik[Traefik ingress]
   Apps --> MS[metrics-server]
   Apps --> Demo[demo-app + HPA]
+  Apps --> Mon[Prometheus + Grafana]
   User((Browser :8080)) --> Traefik --> Demo
+  Traefik --> Mon
 ```
 
 ## Requirements
@@ -27,6 +29,7 @@ kind, kubectl (1.21+ for built-in kustomize), Docker (or a working Podman setup 
 4. Open http://demo.localtest.me:8080
 5. ArgoCD UI: `kubectl --context kind-gitops-portfolio -n argocd port-forward svc/argocd-server 8081:80`,
    then http://localhost:8081, user `admin`, password from `make password`.
+6. Grafana: http://grafana.localtest.me:8080, user `admin`, password from `make grafana-password`.
 
 Tear down: `make down`.
 
@@ -41,7 +44,11 @@ Day-to-day operation, upgrades and troubleshooting: [docs/operations.md](docs/op
 - ArgoCD itself is installed with kustomize from the pinned upstream `install.yaml`
   (`bootstrap/argocd/`), so no local Helm is needed. Chart versions for Traefik and
   metrics-server are pinned in `apps/*.yaml` and rendered by ArgoCD in-cluster.
+- Monitoring is kube-prometheus-stack, trimmed for a laptop: no Alertmanager, 2-day
+  retention, and no etcd/scheduler/controller-manager/kube-proxy scraping (kind binds
+  them to 127.0.0.1). The Grafana admin password is a random Secret created by
+  `make grafana-secret`, never stored in Git.
 
 ## Next
 
-cert-manager, kube-prometheus-stack, External Secrets, Kyverno policies.
+cert-manager, Alertmanager routing, External Secrets, Kyverno policies.
